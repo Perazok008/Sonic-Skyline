@@ -1,104 +1,93 @@
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, 
-                             QWidget, QLabel, QMessageBox)
-from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtGui import QFont
+"""
+Main application entry point for Sonic Skyline
+"""
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
+from constants import APP_NAME, WINDOW_MIN_SIZE
 from gui.file_selection import FileSelectionWidget
+from gui.ui_components import create_content_area, create_styled_button, create_button_layout
+from gui.file_display import FileDisplayManager
+from core.file_operations import FileProcessor
+
 
 class MainWindow(QMainWindow):
+    """Main application window"""
+    
     def __init__(self):
         super().__init__()
-
-        self.setWindowTitle("Sonic Skyline")
-        self.setFixedSize(QSize(800, 600))
-        
-        # Create the main widget and layout
+        self.file_processor = FileProcessor()
+        self._setup_window()
+        self._setup_ui()
+        self._connect_signals()
+    
+    def _setup_window(self) -> None:
+        """Configure the main window"""
+        self.setWindowTitle(APP_NAME)
+        self.setMinimumSize(WINDOW_MIN_SIZE)
+    
+    def _setup_ui(self) -> None:
+        """Setup the user interface"""
+        # Create main widget and layout
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
-        
-        # Create main vertical layout
         main_layout = QVBoxLayout()
         main_widget.setLayout(main_layout)
         
-        # Create file selection widget
+        # Create components
         self.file_selection_widget = FileSelectionWidget()
-        self.file_selection_widget.file_selected.connect(self.on_file_selected)
+        self.content_area = create_content_area()
         
-        # Create main content area
-        self.content_area = QLabel()
-        self.content_area.setMinimumSize(QSize(760, 400))
-        self.content_area.setStyleSheet("""
-            QLabel {
-                border: 2px dashed #cccccc;
-                background-color: #f9f9f9;
-                border-radius: 10px;
-            }
-        """)
-        self.content_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.content_area.setText("Select a file to display content here")
-        self.content_area.setFont(QFont("Arial", 12))
+        # Create buttons
+        self.process_button = create_styled_button("Process", enabled=False)
+        self.export_button = create_styled_button("Export", enabled=False)
+        self.connect_ableton = create_styled_button("Connect to Ableton", enabled=False)
         
-        # Create button section
-        from PyQt6.QtWidgets import QHBoxLayout
-        button_section_layout = QHBoxLayout()
+        # Create button layout
+        button_layout = create_button_layout(self.process_button, self.export_button, self.connect_ableton)
         
-        self.process_button = QPushButton("Process")
-        self.process_button.setFont(QFont("Arial", 10))
-        self.process_button.setEnabled(False)
-        self.process_button.clicked.connect(self.process_file)
-        
-        self.export_button = QPushButton("Export")
-        self.export_button.setFont(QFont("Arial", 10))
-        self.export_button.setEnabled(False)
-        self.export_button.clicked.connect(self.export_file)
-        
-        button_section_layout.addStretch()
-        button_section_layout.addWidget(self.process_button)
-        button_section_layout.addWidget(self.export_button)
-        
-        # Add all sections to main layout
+        # Add all components to main layout
         main_layout.addWidget(self.file_selection_widget)
         main_layout.addWidget(self.content_area)
-        main_layout.addLayout(button_section_layout)
+        main_layout.addLayout(button_layout)
     
-    def on_file_selected(self, file_path):
-        """Handle file selection from the file selection widget"""
-        # Enable process and export buttons
-        self.process_button.setEnabled(True)
-        self.export_button.setEnabled(True)
+    def _connect_signals(self) -> None:
+        """Connect signals to their respective slots"""
+        self.file_selection_widget.file_selected.connect(self._on_file_selected)
+        self.process_button.clicked.connect(self._process_file)
+        self.export_button.clicked.connect(self._export_file)
+    
+    def _on_file_selected(self, file_path: str) -> None:
+        """Handle file selection"""
+        # Update file processor
+        self.file_processor.set_current_file(file_path)
         
-        # Display the selected file using the widget's display method
-        self.file_selection_widget.display_file_in_area(self.content_area, file_path)
+        # Enable buttons
+        self._enable_buttons(True)
+        
+        # Display the file
+        FileDisplayManager.display_file(self.content_area, file_path)
     
-    def process_file(self):
+    def _enable_buttons(self, enabled: bool) -> None:
+        """Enable or disable process and export buttons"""
+        self.process_button.setEnabled(enabled)
+        self.export_button.setEnabled(enabled)
+        self.connect_ableton.setEnabled(enabled)
+    
+    def _process_file(self) -> None:
         """Process the selected file"""
-        selected_file = self.file_selection_widget.get_selected_file()
-        if selected_file:
-            import os
-            QMessageBox.information(
-                self,
-                "Process",
-                f"Processing file: {os.path.basename(selected_file)}\n\n(Processing functionality to be implemented)"
-            )
-        else:
-            QMessageBox.warning(self, "Warning", "No file selected!")
+        self.file_processor.process_file(self)
     
-    def export_file(self):
+    def _export_file(self) -> None:
         """Export the processed file"""
-        selected_file = self.file_selection_widget.get_selected_file()
-        if selected_file:
-            import os
-            QMessageBox.information(
-                self,
-                "Export",
-                f"Exporting file: {os.path.basename(selected_file)}\n\n(Export functionality to be implemented)"
-            )
-        else:
-            QMessageBox.warning(self, "Warning", "No file selected!")
+        self.file_processor.export_file(self)
 
-app = QApplication([])
-window = MainWindow()
 
-window.show()  # IMPORTANT!!!!! Windows are hidden by default.
+def main() -> None:
+    """Main application entry point"""
+    app = QApplication([])
+    window = MainWindow()
+    window.show()
+    app.exec()
 
-# Start the event loop.
-app.exec()
+
+if __name__ == "__main__":
+    main()
