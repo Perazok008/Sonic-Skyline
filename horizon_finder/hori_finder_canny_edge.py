@@ -3,7 +3,7 @@ import cv2 as cv
 from matplotlib import pyplot as plt
 import csv
 
-output_file_name_prefix = "./test_results/F_"
+output_file_name_prefix = "./test_results/G_"
 
 test_landscape_image = "./test_images/torres-del-paine-national-park-stock.jpg"
 
@@ -18,6 +18,8 @@ def get_canny_edges(test_landscape_image):
     return edges
 
 edges = get_canny_edges(test_landscape_image)
+height = len(edges)
+width = len(edges[0])
 
 def find_horizon(edges):
     
@@ -110,12 +112,14 @@ def save_canny_edges(edges):
     plt.clf()
     plt.imshow(edges,cmap = 'gray')
     #plt.xticks([]), plt.yticks([])
-    plt.title("Canny Edge")
+    plt.title("Canny Edges")
 
-    plt.savefig(output_file_name_prefix + "canny_edge.jpg")
+    plt.savefig(output_file_name_prefix + "canny_edges.jpg")
 
 # overlay
-def save_overlay_on_canny_edges(edges, horizon_line):
+def save_horizon_overlay_on_canny_edges(edges, horizon_line):
+    height = len(edges)
+    width = len(edges[0])
     plt.clf()
     x = [i for i in range (1, width+1)]
     y = horizon_line
@@ -124,12 +128,14 @@ def save_overlay_on_canny_edges(edges, horizon_line):
     plt.imshow(edges,cmap = 'gray')
     #plt.xticks([]), plt.yticks([])
     plt.plot(x, overlay_y, color='pink', linewidth=2)  # Plot points connected by line, markers on points
-    plt.title("Canny Edge Overlay")
+    plt.title("Canny Edge Horizon Overlaid on Canny Edges")
 
-    plt.savefig(output_file_name_prefix + "canny_edge_overlay.jpg")
+    plt.savefig(output_file_name_prefix + "canny_edge_horizon_overlaid_on_canny_edges.jpg")
 
 # overlay on original
-def save_overlay_on_original(horizon_line):
+def save_horizon_overlay_on_original(horizon_line, height, width):
+    x = [i for i in range (1, width+1)]
+    y = horizon_line
     plt.clf()
     overlay_y = [-1*val + height for val in horizon_line]
 
@@ -137,21 +143,21 @@ def save_overlay_on_original(horizon_line):
     plt.imshow(img)
     #plt.xticks([]), plt.yticks([])
     plt.plot(x, overlay_y, color='red', linewidth=2)  # Plot points connected by line, markers on points
-    plt.title("Canny Edge Overlay on Original")
+    plt.title("Canny Edge Horizon Overlaid on Original")
 
-    plt.savefig(output_file_name_prefix + "canny_edge_overlay_on_original.jpg")
+    plt.savefig(output_file_name_prefix + "canny_edge_horizon_overlaid_on_original.jpg")
 
 # graph
-def save_xy_graph(horizon_line):
+def save_horizon_to_xy_graph(horizon_line, height, width):
     plt.clf()
     x = [i for i in range (1, width+1)]
     y = horizon_line
     plt.plot(x, y, color='blue', lw=2)  # Plot points connected by line, markers on points
-    plt.title("Canny Edge XY Plot")
+    plt.title("Canny Edge Horizon XY Plot")
     plt.xlim(0, width)
     plt.ylim(0, height)
 
-    plt.savefig(output_file_name_prefix + "canny_edge_xy_plot.jpg")
+    plt.savefig(output_file_name_prefix + "canny_edge_horizon_xy_plot.jpg")
 
 # Saving horizon data as csv file
 def save_horizon_line_as_csv(horizon_line):
@@ -160,3 +166,9 @@ def save_horizon_line_as_csv(horizon_line):
         print(horizon_line)
         for val in horizon_line:
             writer.writerow([val])
+
+save_canny_edges(edges)
+save_horizon_overlay_on_canny_edges(edges, horizon_line)
+save_horizon_overlay_on_original(horizon_line, height, width)
+save_horizon_to_xy_graph(horizon_line, height, width)
+save_horizon_line_as_csv(horizon_line)
