@@ -2,9 +2,9 @@ import numpy as np
 import cv2 as cv
 from matplotlib import pyplot as plt
 
-output_file_name_prefix = "C_"
+output_file_name_prefix = "imgseg_C_"
 
-test_landscape_image = "mountains-fjord_G4EWW6PIHV.jpg"
+test_landscape_image = "./test_images/pexels-bri-schneiter-28802-346529.jpg"
 
 # Image Segmentation: https://docs.opencv.org/4.x/d3/db4/tutorial_py_watershed.html
 

@@ -2,7 +2,7 @@ import numpy as np
 import cv2 as cv
 from matplotlib import pyplot as plt
 
-test_landscape_image = 'road_asphalt_highway_mountain_tree-61355.jpg'
+test_landscape_image = './test_images/road_asphalt_highway_mountain_tree-61355.jpg'
 
 # Lots of image processing tools that may apply:
 # https://docs.opencv.org/4.x/d2/d96/tutorial_py_table_of_contents_imgproc.html

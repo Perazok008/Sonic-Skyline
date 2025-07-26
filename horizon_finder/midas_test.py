@@ -2,7 +2,7 @@ import cv2
 import torch
 import matplotlib.pyplot as plt
 
-test_landscape_image = 'road_asphalt_highway_mountain_tree-61355.jpg'
+test_landscape_image = './test_images/road_asphalt_highway_mountain_tree-61355.jpg'
 
 # ERROR: torch.hub.load calls not working, python doesn't have internet access
 
