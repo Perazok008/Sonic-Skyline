@@ -2,10 +2,9 @@ import numpy as np
 import cv2 as cv
 from matplotlib import pyplot as plt
 
-output_file_name_prefix = "H_"
+output_file_name_prefix = "M2_"
 
-test_landscape_image = "mountains-fjord_G4EWW6PIHV.jpg"
-#'road_asphalt_highway_mountain_tree-61355.jpg'
+test_landscape_image = "landscape_with_clouds.jpg"
 
 # Canny Edge: https://docs.opencv.org/4.x/da/d22/tutorial_py_canny.html
 
@@ -18,27 +17,80 @@ edges = cv.Canny(img,100,200)
 height = len(edges)
 width = len(edges[0])
 horizon_line = [-1 for _ in range (0, width)]
+#horizon_line_deltas = [-1 for _ in range (0, width)]
 
-line_jump_thres = 50
+line_jump_thres = 15
 
 prev_hori_pixel = -1
 for col in range(0, width):
-    for i in range(0, height):
-        curr_height = height - i
-        pixel = edges[i][col]
-        print(str(curr_height) + ", " + str(col) + " " + str(pixel))
+    # pick highest line if first col
+    if prev_hori_pixel == -1:
+        for i in range(0, height):
+            curr_height = height - i
+            pixel = edges[i][col]
+            if pixel != 0: # there is an edge
+                horizon_line[col] = curr_height
+                prev_hori_pixel = curr_height
+                break
+
+    up_height = -1
+    # search up from previous line
+    for i in range(0, height-prev_hori_pixel):
+        curr_height = prev_hori_pixel + i
+        pixel = edges[height-prev_hori_pixel-i][col]
         if pixel != 0: # there is an edge
-            # determine if this point is close enough to prev edge
-            if prev_hori_pixel > -1:
-                diff = abs(prev_hori_pixel - curr_height)
-                print(str(curr_height) + " " + str(diff))
-                if (diff > line_jump_thres):
-                    print(str(curr_height) + " " + str(diff))
-                    continue
-            horizon_line[col] = curr_height
-            prev_hori_pixel = curr_height
-            print(edges.shape)
-            break # look at next column
+            up_height = curr_height
+            break
+    down_height = -1
+    # search down from previous line
+    for i in range(0, prev_hori_pixel):
+        curr_height = prev_hori_pixel - i
+        pixel = edges[height-prev_hori_pixel+i][col]
+        if pixel != 0: # there is an edge
+            down_height = curr_height
+            break
+
+    print("prev_hori_pixel: " + str(prev_hori_pixel) + ", up_height: " + str(up_height) + ", down_height: " + str(down_height))
+    # compare deltas, pick closer line
+    if (up_height == -1 and down_height == -1):
+        # didn't find any edge
+        # add the previous value
+        horizon_line[col] = prev_hori_pixel
+    elif (up_height != -1 and down_height == -1):
+        if (abs(prev_hori_pixel-up_height) <= line_jump_thres):
+            horizon_line[col] = up_height
+            prev_hori_pixel = up_height
+        else:
+            # didn't find a close enough edge
+            # add the previous value
+            horizon_line[col] = prev_hori_pixel
+    elif (up_height == -1 and down_height != -1):
+        if (abs(prev_hori_pixel-down_height) <= line_jump_thres):
+            horizon_line[col] = down_height
+            prev_hori_pixel = down_height
+        else:
+            # didn't find a close enough edge
+            # add the previous value
+            horizon_line[col] = prev_hori_pixel
+    else: #(up_height != -1 and down_height != -1):
+        # up_height is closer
+        if (abs(prev_hori_pixel-up_height) <= abs(prev_hori_pixel-down_height)):
+            if (abs(prev_hori_pixel-up_height) <= line_jump_thres):
+                horizon_line[col] = up_height
+                prev_hori_pixel = up_height
+            else:
+                # didn't find a close enough edge
+                # add the previous value
+                horizon_line[col] = prev_hori_pixel
+        else: # down_height is closer
+            if (abs(prev_hori_pixel-down_height) <= line_jump_thres):
+                horizon_line[col] = down_height
+                prev_hori_pixel = down_height
+            else:
+                # didn't find a close enough edge
+                # add the previous value
+                horizon_line[col] = prev_hori_pixel
+    
 
 x = [i for i in range (1, width+1)]
 y = horizon_line
