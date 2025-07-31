@@ -5,11 +5,11 @@ import os
 from typing import Optional
 from PyQt6.QtWidgets import QHBoxLayout, QFileDialog, QWidget
 from PyQt6.QtCore import pyqtSignal
-from constants import FILE_DIALOG_FILTER, FILE_SELECTION_SIZE, SUCCESS_COLOR
+from core.constants import FILE_DIALOG_FILTER, FILE_SELECTION_SIZE, SUCCESS_COLOR
 from gui.ui_components import create_styled_button, create_file_status_label
 
 
-class FileSelectionWidget(QWidget):
+class FileSelectionManager(QWidget):
     """Widget for selecting media files"""
     
     # Signal emitted when a file is selected
