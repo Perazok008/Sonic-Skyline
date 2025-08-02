@@ -2,12 +2,14 @@
 Main application entry point for Sonic Skyline
 """
 import os
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QMessageBox
 from core.constants import APP_NAME, WINDOW_MIN_SIZE
 from gui.file_selection import FileSelectionManager
 from gui.ui_components import create_content_area, create_styled_button, create_button_layout, create_visualization_toggles
 from gui.file_display import FileDisplayManager
 from gui.finder_settings import FinderSettingsPanel
+from gui.export_dialog import ExportDialog
+from core.export_manager import ExportManager
 from horizon_finder.horizon_finder import HorizonFinder
 
 
@@ -19,6 +21,12 @@ class MainWindow(QMainWindow):
         self._setup_window()
         self._setup_ui()
         self.horizon_finder = HorizonFinder()  # Create horizon_finder before connecting signals
+        
+        # Track export data
+        self.current_horizon_line = None
+        self.current_video_horizon_lines = []
+        self.is_video_processed = False
+        
         self._connect_signals()
     
     def _setup_window(self) -> None:
@@ -104,11 +112,21 @@ class MainWindow(QMainWindow):
     def _process_file(self) -> None:
         """Process the selected file"""
         file_path = self.file_selection_widget.get_selected_file()
+        file_extension = os.path.splitext(file_path)[1].lower()
+        
+        # Reset export data
+        self.current_horizon_line = None
+        self.current_video_horizon_lines = []
+        self.is_video_processed = False
+        
         # For images, process horizon line once; for videos, this will be processed frame by frame
         horizon_line = None
-        file_extension = os.path.splitext(file_path)[1].lower()
         if file_extension in ['.jpg', '.jpeg', '.png', '.bmp', '.gif']:
             horizon_line = self.horizon_finder.find_horizon_line(file_path)
+            self.current_horizon_line = horizon_line
+        else:
+            # For videos, we'll collect horizon lines during playback
+            self.is_video_processed = True
         
         show_image, show_horizon, show_axis = self._get_toggle_states()
         FileDisplayManager.display_file(
@@ -120,7 +138,101 @@ class MainWindow(QMainWindow):
 
     def _export_file(self) -> None:
         """Export the processed file"""
-        self.file_processor.export_file(self)
+        file_path = self.file_selection_widget.get_selected_file()
+        if not file_path:
+            QMessageBox.warning(self, "Export Error", "No file selected.")
+            return
+        
+        # Check if we have horizon data
+        has_horizon_data = (self.current_horizon_line is not None or 
+                           self.current_video_horizon_lines or 
+                           self.is_video_processed)
+        
+        # Show export dialog
+        dialog = ExportDialog(current_file=file_path, has_horizon_data=has_horizon_data)
+        dialog.export_confirmed.connect(self._handle_export)
+        dialog.exec()
+
+    def _handle_export(self, export_config: dict, save_path: str, base_name: str) -> None:
+        """Handle export request from dialog"""
+        file_path = self.file_selection_widget.get_selected_file()
+        
+        try:
+            # Determine what horizon data to pass
+            horizon_line = self.current_horizon_line
+            all_horizon_lines = None
+            
+            # For videos, we need to collect horizon lines if processing in real-time
+            file_extension = os.path.splitext(file_path)[1].lower()
+            if file_extension in ['.mp4', '.avi', '.mov', '.mkv'] and self.is_video_processed:
+                # For videos, we'll need to process all frames for export
+                # This is a simplified approach - in a real application you might want to
+                # cache the results during playback or show a progress dialog
+                all_horizon_lines = self._collect_video_horizon_lines(file_path)
+            
+            # Perform export
+            success = ExportManager.export_results(
+                export_config=export_config,
+                save_path=save_path,
+                base_name=base_name,
+                file_path=file_path,
+                horizon_line=horizon_line,
+                all_horizon_lines=all_horizon_lines
+            )
+            
+            if success:
+                QMessageBox.information(
+                    self, "Export Complete", 
+                    f"Files exported successfully to:\n{save_path}"
+                )
+            else:
+                QMessageBox.warning(
+                    self, "Export Error", 
+                    "Some files could not be exported. Check the console for details."
+                )
+                
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Export Error", 
+                f"Export failed: {str(e)}"
+            )
+
+    def _collect_video_horizon_lines(self, file_path: str) -> list[list[int]]:
+        """Collect horizon lines for all frames in a video"""
+        try:
+            import cv2 as cv
+            
+            horizon_lines = []
+            cap = cv.VideoCapture(file_path)
+            
+            if not cap.isOpened():
+                return []
+            
+            frame_count = 0
+            max_frames = 1000  # Limit processing for performance
+            
+            while frame_count < max_frames:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                try:
+                    # Convert frame to RGB for processing
+                    frame_rgb = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
+                    horizon_line = self.horizon_finder.find_horizon_line_from_array(frame_rgb)
+                    horizon_lines.append(horizon_line)
+                except Exception:
+                    # If processing fails, add empty line
+                    horizon_lines.append([])
+                
+                frame_count += 1
+            
+            cap.release()
+            return horizon_lines
+            
+        except Exception as e:
+            print(f"Error collecting video horizon lines: {e}")
+            return []
 
     def _get_toggle_states(self) -> tuple[bool, bool, bool]:
         """Get current state of all visualization toggles"""
