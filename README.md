@@ -4,3 +4,7 @@ A machine learning tool that identifies that horizon line in images and video an
 
 # Setup
 pip install -r requirements.txt
+
+https://github.com/FluidSynth/fluidsynth/wiki/Download
+
+brew install fluid-synth
