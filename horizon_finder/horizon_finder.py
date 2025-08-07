@@ -20,7 +20,7 @@ class HorizonFinder:
         assert img is not None, "file could not be read, check with os.path.exists()"
         edges = cv.Canny(   img,   
                             self.canny_edge_params["threshold1"],
-                            self.canny_edge_params["threshold2"]
+                            self.canny_edge_params["threshold2"],
                         )
         return edges
     

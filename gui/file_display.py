@@ -25,8 +25,8 @@ class FileDisplayManager:
     # Performance optimization variables
     _frame_count = 0
     _cached_horizon_line = None
-    _process_every_n_frames = 5  # Process horizon detection every 5th frame (adjustable for performance)
-    _max_fps = 30  # Cap at 20 FPS for smooth performance (adjustable for performance)
+    _process_every_n_frames = 10  # Process horizon detection every 5th frame (adjustable for performance)
+    _max_fps = 25  # Cap at 20 FPS for smooth performance (adjustable for performance)
     
     @classmethod
     def set_performance_settings(cls, process_every_n_frames: int = 5, max_fps: int = 20) -> None:

@@ -2,13 +2,6 @@ PyQt6
 opencv-python
 numpy
 matplotlib
-# MiDaS dependencies
-torch
-timm
-# SAM 2 dependencies
-sam2
-scikit-image
-Pillow
 # Enhanced horizon detection dependencies
 scipy
 scikit-learn
