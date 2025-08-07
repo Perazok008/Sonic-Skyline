@@ -2,9 +2,5 @@ PyQt6
 opencv-python
 numpy
 matplotlib
-# Enhanced horizon detection dependencies
-scipy
-scikit-learn
-# Midi dependencies
 mido
 midi2audio

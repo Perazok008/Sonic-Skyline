@@ -1,5 +1,8 @@
-"""
-Settings panel for horizon finder parameters
+"""Settings panel for horizon finder parameters.
+
+Exposes Canny edge detection parameters and the horizon continuity constraint
+(`line_jump_threshold`). Emits `settings_changed` with a structured dict on any
+change so the main window can apply updates immediately.
 """
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QSpinBox, 
                             QCheckBox, QGroupBox, QPushButton, QHBoxLayout)
@@ -8,7 +11,7 @@ from core.constants import BUTTON_FONT, CONTENT_FONT
 
 
 class FinderSettingsPanel(QWidget):
-    """Settings panel for horizon finder parameters"""
+    """Settings panel for horizon finder parameters."""
     
     # Signal emitted when settings change
     settings_changed = pyqtSignal(dict)
@@ -19,7 +22,7 @@ class FinderSettingsPanel(QWidget):
         self._connect_signals()
     
     def _setup_ui(self):
-        """Setup the settings UI"""
+        """Setup the settings UI with two groups: Edge Detection and Horizon."""
         layout = QVBoxLayout()
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
@@ -39,15 +42,15 @@ class FinderSettingsPanel(QWidget):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
         
-        # Canny Edge Detection Group
+        # Canny Edge Detection Group (thresholds control sensitivity; aperture/L2 affect gradient precision)
         canny_group = self._create_canny_group()
         layout.addWidget(canny_group)
         
-        # Horizon Line Detection Group
+        # Horizon Line Detection Group (continuity constraint to reduce jitter)
         horizon_group = self._create_horizon_group()
         layout.addWidget(horizon_group)
         
-        # Reset and Apply buttons
+        # Reset and Apply buttons; Apply is bound to emit changes immediately
         button_layout = self._create_button_layout()
         layout.addLayout(button_layout)
         
@@ -61,8 +64,8 @@ class FinderSettingsPanel(QWidget):
             }
             QGroupBox {
                 font-weight: bold;
-                border: 2px solid palette(mid);
-                border-radius: 8px;
+                border: none;
+                border-radius: 0px;
                 margin-top: 15px;
                 padding-top: 15px;
                 background-color: palette(base);
@@ -86,16 +89,16 @@ class FinderSettingsPanel(QWidget):
             QSpinBox {
                 background-color: palette(base);
                 color: palette(text);
-                border: 1px solid palette(mid);
-                border-radius: 4px;
-                padding: 4px;
+                border: none;
+                border-bottom: 1px solid palette(mid);
+                padding: 6px 4px;
                 margin: 2px 0px;
                 font-size: 11px;
                 selection-background-color: palette(highlight);
                 selection-color: palette(highlighted-text);
             }
             QSpinBox:focus {
-                border: 2px solid palette(highlight);
+                border-bottom: 2px solid palette(highlight);
             }
             QCheckBox {
                 color: palette(text);
@@ -106,9 +109,9 @@ class FinderSettingsPanel(QWidget):
             QPushButton {
                 background-color: palette(button);
                 color: palette(button-text);
-                border: 1px solid palette(mid);
-                border-radius: 4px;
-                padding: 6px 12px;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 14px;
                 margin: 2px;
                 font-size: 11px;
             }
@@ -124,27 +127,27 @@ class FinderSettingsPanel(QWidget):
         self.setFixedWidth(250)
     
     def _create_canny_group(self) -> QGroupBox:
-        """Create Canny edge detection settings group"""
+        """Create Canny edge detection settings group."""
         group = QGroupBox("Edge Detection")
         layout = QVBoxLayout()
         layout.setContentsMargins(10, 20, 10, 10)
         layout.setSpacing(8)
         
-        # Threshold 1
+        # Threshold 1 (lower hysteresis) – smaller value catches more edges/noise
         layout.addWidget(QLabel("Lower Threshold (intensity):"))
         self.threshold1_spin = QSpinBox()
         self.threshold1_spin.setRange(1, 500)
         self.threshold1_spin.setValue(100)
         layout.addWidget(self.threshold1_spin)
         
-        # Threshold 2
+        # Threshold 2 (upper hysteresis) – larger value reduces noise
         layout.addWidget(QLabel("Upper Threshold (intensity):"))
         self.threshold2_spin = QSpinBox()
         self.threshold2_spin.setRange(1, 500)
         self.threshold2_spin.setValue(200)
         layout.addWidget(self.threshold2_spin)
         
-        # Aperture Size
+        # Aperture Size – Sobel kernel size (odd 3..7); larger captures broader gradients
         layout.addWidget(QLabel("Aperture Size:"))
         self.aperture_spin = QSpinBox()
         self.aperture_spin.setRange(3, 7)
@@ -152,7 +155,7 @@ class FinderSettingsPanel(QWidget):
         self.aperture_spin.setValue(3)
         layout.addWidget(self.aperture_spin)
         
-        # L2 Gradient
+        # L2 Gradient – use more accurate gradient magnitude at the cost of speed
         self.l2_gradient_check = QCheckBox("Use L2 Gradient")
         self.l2_gradient_check.setChecked(False)
         layout.addWidget(self.l2_gradient_check)
@@ -161,20 +164,20 @@ class FinderSettingsPanel(QWidget):
         return group
     
     def _create_horizon_group(self) -> QGroupBox:
-        """Create horizon line detection settings group"""
+        """Create horizon line detection settings group."""
         group = QGroupBox("Horizon Detection")
         layout = QVBoxLayout()
         layout.setContentsMargins(10, 20, 10, 10)
         layout.setSpacing(8)
         
-        # Line Jump Threshold
+        # Line Jump Threshold – max per-column change allowed to keep line continuous
         layout.addWidget(QLabel("Line Jump Threshold (pixels):"))
         self.line_jump_spin = QSpinBox()
         self.line_jump_spin.setRange(1, 100)
         self.line_jump_spin.setValue(15)
         layout.addWidget(self.line_jump_spin)
         
-        # Help text
+        # Help text to clarify behavior for users
         help_label = QLabel("Maximum pixel jump between adjacent horizon points")
         help_label.setStyleSheet("""
             color: palette(dark); 
@@ -191,7 +194,7 @@ class FinderSettingsPanel(QWidget):
         return group
     
     def _create_button_layout(self) -> QHBoxLayout:
-        """Create button layout with Reset and Apply buttons"""
+        """Create button layout with Reset and Apply buttons."""
         layout = QHBoxLayout()
         layout.setContentsMargins(5, 10, 5, 5)
         layout.setSpacing(8)
@@ -210,7 +213,7 @@ class FinderSettingsPanel(QWidget):
         return layout
     
     def _connect_signals(self):
-        """Connect all input signals to auto-apply changes"""
+        """Connect all input signals to auto-apply changes."""
         self.threshold1_spin.valueChanged.connect(self._apply_settings)
         self.threshold2_spin.valueChanged.connect(self._apply_settings)
         self.aperture_spin.valueChanged.connect(self._apply_settings)
@@ -218,7 +221,7 @@ class FinderSettingsPanel(QWidget):
         self.line_jump_spin.valueChanged.connect(self._apply_settings)
     
     def _reset_defaults(self):
-        """Reset all settings to default values"""
+        """Reset all settings to default values and emit change."""
         self.threshold1_spin.setValue(100)
         self.threshold2_spin.setValue(200)
         self.aperture_spin.setValue(3)
@@ -227,7 +230,7 @@ class FinderSettingsPanel(QWidget):
         self._apply_settings()
     
     def _apply_settings(self):
-        """Apply current settings and emit signal"""
+        """Apply current settings by emitting a structured dict."""
         settings = {
             "canny_edge_params": {
                 "threshold1": self.threshold1_spin.value(),
@@ -242,7 +245,7 @@ class FinderSettingsPanel(QWidget):
         self.settings_changed.emit(settings)
     
     def get_current_settings(self) -> dict:
-        """Get current settings as dictionary"""
+        """Get current settings as a dictionary for inspection or persistence."""
         return {
             "canny_edge_params": {
                 "threshold1": self.threshold1_spin.value(),
@@ -256,7 +259,7 @@ class FinderSettingsPanel(QWidget):
         }
     
     def set_settings(self, settings: dict):
-        """Set settings from dictionary"""
+        """Populate UI controls from a settings dictionary."""
         if "canny_edge_params" in settings:
             canny = settings["canny_edge_params"]
             self.threshold1_spin.setValue(canny.get("threshold1", 100))

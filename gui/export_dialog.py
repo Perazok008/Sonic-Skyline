@@ -1,5 +1,9 @@
-"""
-Export dialog for saving horizon detection results
+"""Export dialog for saving horizon detection results.
+
+Lets the user choose export formats (CSV/Graph/Overlay), a base filename, and a
+save location. Emits `export_confirmed(export_config, path, base_name)` on
+success. The dialog disables options that require horizon data when none is
+available.
 """
 import os
 from pathlib import Path
@@ -12,7 +16,7 @@ from core.constants import BUTTON_FONT, CONTENT_FONT
 
 
 class ExportDialog(QDialog):
-    """Dialog for configuring and executing export operations"""
+    """Dialog for configuring and executing export operations."""
     
     # Signal emitted when export is confirmed with (export_config, save_path, base_name)
     export_confirmed = pyqtSignal(dict, str, str)
@@ -26,9 +30,11 @@ class ExportDialog(QDialog):
         self._setup_ui()
         self._connect_signals()
         self._update_export_options()
+        # Ensure initial button state reflects current selections and name
+        self._update_export_button()
     
     def _setup_ui(self):
-        """Setup the export dialog UI"""
+        """Setup the export dialog UI with 3 sections and action buttons."""
         self.setWindowTitle("Export Horizon Detection Results")
         self.setModal(True)
         self.setMinimumWidth(450)
@@ -43,15 +49,15 @@ class ExportDialog(QDialog):
         title.setStyleSheet("font-weight: bold; font-size: 14px; margin-bottom: 10px;")
         layout.addWidget(title)
         
-        # Export format selection
+        # Export format selection (enables CSV always; others when horizon data exists)
         format_group = self._create_format_group()
         layout.addWidget(format_group)
         
-        # File naming section
+        # File naming section – base name only; suffixes are added automatically
         naming_group = self._create_naming_group()
         layout.addWidget(naming_group)
         
-        # Path selection
+        # Path selection for save directory
         path_group = self._create_path_group()
         layout.addWidget(path_group)
         
@@ -125,23 +131,23 @@ class ExportDialog(QDialog):
         """)
     
     def _create_format_group(self) -> QGroupBox:
-        """Create export format selection group"""
+        """Create export format selection group."""
         group = QGroupBox("What to Export")
         layout = QVBoxLayout()
         layout.setContentsMargins(15, 20, 15, 15)
         layout.setSpacing(10)
         
-        # CSV export
+        # CSV export (always allowed) – serializes horizon coordinates
         self.csv_checkbox = QCheckBox("CSV Data - Horizon line coordinates")
         self.csv_checkbox.setChecked(True)
         layout.addWidget(self.csv_checkbox)
         
-        # Graph image/video export
+        # Graph image/video export – quick visualization via matplotlib
         self.graph_checkbox = QCheckBox("Graph - Horizon line visualization")
         self.graph_checkbox.setChecked(False)
         layout.addWidget(self.graph_checkbox)
         
-        # Overlay image/video export
+        # Overlay image/video export – draws line onto the original frames
         self.overlay_checkbox = QCheckBox("Overlay - Original with horizon line")
         self.overlay_checkbox.setChecked(False)
         layout.addWidget(self.overlay_checkbox)
@@ -156,7 +162,7 @@ class ExportDialog(QDialog):
         return group
     
     def _create_naming_group(self) -> QGroupBox:
-        """Create file naming group"""
+        """Create file naming group."""
         group = QGroupBox("File Name")
         layout = QVBoxLayout()
         layout.setContentsMargins(15, 20, 15, 15)
@@ -174,7 +180,7 @@ class ExportDialog(QDialog):
         
         layout.addWidget(self.name_input)
         
-        # Example text
+        # Example text to show resulting files
         example_text = QLabel("Examples: filename_csv.csv, filename_graph.png, filename_overlay.mp4")
         example_text.setStyleSheet("color: palette(dark); font-size: 10px; margin-top: 5px;")
         example_text.setWordWrap(True)
@@ -184,13 +190,13 @@ class ExportDialog(QDialog):
         return group
     
     def _create_path_group(self) -> QGroupBox:
-        """Create path selection group"""
+        """Create path selection group."""
         group = QGroupBox("Save Location")
         layout = QVBoxLayout()
         layout.setContentsMargins(15, 20, 15, 15)
         layout.setSpacing(8)
         
-        # Path display and browse button
+        # Path display label and browse button
         path_layout = QHBoxLayout()
         
         self.path_label = QLabel(self.selected_path)
@@ -215,7 +221,7 @@ class ExportDialog(QDialog):
         return group
     
     def _create_button_layout(self) -> QHBoxLayout:
-        """Create dialog button layout"""
+        """Create dialog button layout."""
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 20, 0, 0)
         
@@ -235,7 +241,7 @@ class ExportDialog(QDialog):
         return layout
     
     def _connect_signals(self):
-        """Connect dialog signals"""
+        """Connect dialog signals for browsing, cancel, export, and enablement."""
         self.browse_button.clicked.connect(self._browse_path)
         self.cancel_button.clicked.connect(self.reject)
         self.export_button.clicked.connect(self._validate_and_export)
@@ -247,7 +253,7 @@ class ExportDialog(QDialog):
         self.name_input.textChanged.connect(self._update_export_button)
     
     def _update_export_options(self):
-        """Update available export options based on current state"""
+        """Update available export options based on presence of horizon data."""
         if not self.has_horizon_data:
             # Disable options that require horizon data
             self.graph_checkbox.setEnabled(False)
@@ -256,7 +262,7 @@ class ExportDialog(QDialog):
             self.overlay_checkbox.setChecked(False)
     
     def _update_export_button(self):
-        """Update export button enabled state"""
+        """Enable Export only if at least one option and a name are provided."""
         has_selection = (self.csv_checkbox.isChecked() or 
                         self.graph_checkbox.isChecked() or 
                         self.overlay_checkbox.isChecked())
@@ -265,7 +271,7 @@ class ExportDialog(QDialog):
         self.export_button.setEnabled(has_selection and has_name)
     
     def _browse_path(self):
-        """Open directory browser"""
+        """Open directory browser to set the export target path."""
         path = QFileDialog.getExistingDirectory(
             self, 
             "Select Export Directory", 
@@ -277,7 +283,7 @@ class ExportDialog(QDialog):
             self.path_label.setText(path)
     
     def _validate_and_export(self):
-        """Validate inputs and emit export signal"""
+        """Validate inputs, then emit `export_confirmed` and close the dialog."""
         # Validate selections
         if not (self.csv_checkbox.isChecked() or 
                self.graph_checkbox.isChecked() or 
@@ -311,7 +317,7 @@ class ExportDialog(QDialog):
         self.accept()
     
     def get_export_config(self) -> Tuple[Dict[str, bool], str, str]:
-        """Get current export configuration"""
+        """Get current export configuration for testing or inspection."""
         export_config = {
             'csv': self.csv_checkbox.isChecked(),
             'graph': self.graph_checkbox.isChecked(),

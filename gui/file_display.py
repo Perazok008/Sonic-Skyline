@@ -1,5 +1,14 @@
-"""
-File display functionality for the Sonic Skyline application
+"""Display utilities for images and videos.
+
+This module centralizes rendering of images and videos into a Qt `QLabel`.
+It also integrates real-time horizon detection for videos with lightweight
+performance optimizations:
+- Processes only every Nth frame and caches the last computed horizon line
+- Caps render FPS to reduce CPU/GPU usage
+
+Coordinate convention:
+- The horizon line values are heights from the bottom of the frame. This
+  function converts to OpenCV's y-from-top coordinate when drawing.
 """
 import os
 import numpy as np
@@ -8,10 +17,14 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QImage
 from core.constants import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, CONTENT_FONT
 import cv2 as cv
-from gui.file_selection import FileSelectionManager
 
 class FileDisplayManager:
-    """Manages the display of files in the content area"""
+    """Manages rendering of images/videos and overlaying the horizon line.
+
+    Static methods are used to keep integration simple from the main window.
+    Video playback state is stored as class-level attributes and is torn down
+    when a new file is displayed or the window closes.
+    """
     
     # Class variables for video playback
     _video_capture = None
@@ -25,8 +38,8 @@ class FileDisplayManager:
     # Performance optimization variables
     _frame_count = 0
     _cached_horizon_line = None
-    _process_every_n_frames = 10  # Process horizon detection every 5th frame (adjustable for performance)
-    _max_fps = 25  # Cap at 20 FPS for smooth performance (adjustable for performance)
+    _process_every_n_frames = 10  # Process horizon detection every 10th frame (adjustable for performance)
+    _max_fps = 25  # Cap at 25 FPS for smooth performance (adjustable for performance)
     
     @classmethod
     def set_performance_settings(cls, process_every_n_frames: int = 5, max_fps: int = 20) -> None:
@@ -38,7 +51,11 @@ class FileDisplayManager:
     def display_file(content_area: QLabel, file_path: str, horizon_line: list[int] | None, 
                     show_image: bool = True, show_horizon: bool = True, show_axis: bool = False, 
                     horizon_finder=None) -> None:
-        """Display the selected file in the provided content area"""
+        """Display an image or play a video with optional overlays.
+
+        For images, draws the provided `horizon_line` immediately. For videos,
+        starts a timer to read frames and compute/draw the horizon periodically.
+        """
         
         # Stop any existing video playback
         FileDisplayManager._stop_video()
@@ -63,6 +80,7 @@ class FileDisplayManager:
     @staticmethod
     def _render_frame(file_path: str, horizon_line: list[int] | None, 
                      show_image: bool = True, show_horizon: bool = True, show_axis: bool = False) -> np.ndarray:
+        """Render a single image file to an RGB numpy array with overlays."""
 
         image = cv.imread(file_path)
         if image is None:
@@ -107,7 +125,7 @@ class FileDisplayManager:
     @staticmethod
     def _start_video_playback(content_area: QLabel, file_path: str, horizon_finder, 
                              show_image: bool = True, show_horizon: bool = True, show_axis: bool = False) -> None:
-        """Start video playback with optimized real-time horizon detection"""
+        """Begin reading frames and scheduling horizon detection for a video."""
         
         # Initialize video capture
         FileDisplayManager._video_capture = cv.VideoCapture(file_path)
@@ -138,7 +156,7 @@ class FileDisplayManager:
     
     @staticmethod
     def _update_video_frame() -> None:
-        """Update video frame with optimized horizon detection"""
+        """Read next frame, optionally update horizon, render, and display."""
         if FileDisplayManager._video_capture is None:
             return
         
@@ -194,7 +212,7 @@ class FileDisplayManager:
     @staticmethod
     def _render_frame_from_array(image_rgb: np.ndarray, horizon_line: list[int] | None, 
                                 show_image: bool = True, show_horizon: bool = True, show_axis: bool = False) -> np.ndarray:
-        """Render frame from numpy array (similar to _render_frame but for arrays)"""
+        """Render a numpy array frame with optional horizon/axis overlays."""
         
         height, width = image_rgb.shape[:2]
 
@@ -224,7 +242,7 @@ class FileDisplayManager:
     
     @staticmethod
     def _stop_video() -> None:
-        """Stop video playback and clean up resources"""
+        """Stop video playback and release timers and capture handles."""
         if FileDisplayManager._video_timer is not None:
             FileDisplayManager._video_timer.stop()
             FileDisplayManager._video_timer = None
@@ -241,7 +259,7 @@ class FileDisplayManager:
     
     @staticmethod
     def update_video_display_settings(show_image: bool = True, show_horizon: bool = True, show_axis: bool = False) -> None:
-        """Update display settings for ongoing video playback"""
+        """Update visibility toggles during video playback without restarting."""
         if FileDisplayManager._video_capture is not None:
             FileDisplayManager._show_image = show_image
             FileDisplayManager._show_horizon = show_horizon

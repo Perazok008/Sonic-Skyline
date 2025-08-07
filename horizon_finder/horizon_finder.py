@@ -1,9 +1,27 @@
+"""Horizon detection logic.
+
+This module contains the `HorizonFinder` which detects a single horizon-like line
+from images or frames. The algorithm:
+- Runs Canny edge detection (parameters configurable)
+- For each image column, searches near the previous detected y-position to find
+  the nearest edge, constrained by a maximum jump threshold
+
+Coordinate convention for outputs:
+- Returned line is a list of heights measured from the BOTTOM of the image
+  (i.e., height in pixels, not y from the top). A value of -1 means unknown.
+"""
+
 import numpy as np
 import cv2 as cv
-from matplotlib import pyplot as plt
-import csv
 
 class HorizonFinder:
+    """Finds a horizon line in an image or numpy array.
+
+    The detection is intentionally simple and fast for real-time use. It depends
+    on edge detection and a per-column nearest-edge search with a configurable
+    maximum jump constraint to maintain continuity and reject spurious edges.
+    """
+
     def __init__(self):
         self.canny_edge_params = {
             "threshold1": 100,
@@ -16,30 +34,49 @@ class HorizonFinder:
         }
 
     def _get_canny_edges(self, file_path: str) -> np.ndarray:
+        """Run Canny edge detection on an image file path.
+
+        Returns a single-channel binary edge map (uint8). Uses current
+        `canny_edge_params`, including aperture size and L2 gradient.
+        """
         img = cv.imread(file_path, cv.IMREAD_GRAYSCALE)
         assert img is not None, "file could not be read, check with os.path.exists()"
-        edges = cv.Canny(   img,   
-                            self.canny_edge_params["threshold1"],
-                            self.canny_edge_params["threshold2"],
-                        )
+        edges = cv.Canny(
+            img,
+            self.canny_edge_params["threshold1"],
+            self.canny_edge_params["threshold2"],
+            apertureSize=int(self.canny_edge_params.get("apertureSize", 3)),
+            L2gradient=bool(self.canny_edge_params.get("L2gradient", False)),
+        )
         return edges
     
     def _get_canny_edges_from_array(self, img_array: np.ndarray) -> np.ndarray:
-        """Get Canny edges directly from numpy array (optimized for video processing)"""
+        """Get Canny edges directly from an RGB or grayscale numpy array.
+
+        Accepts RGB arrays and converts to grayscale as needed. Optimized for
+        real-time frame processing where avoiding I/O is important.
+        """
         if len(img_array.shape) == 3:
             # Convert to grayscale if it's a color image
             img_gray = cv.cvtColor(img_array, cv.COLOR_RGB2GRAY)
         else:
             img_gray = img_array
         
-        edges = cv.Canny(img_gray,   
-                        self.canny_edge_params["threshold1"],
-                        self.canny_edge_params["threshold2"]
-                        )
+        edges = cv.Canny(
+            img_gray,
+            self.canny_edge_params["threshold1"],
+            self.canny_edge_params["threshold2"],
+            apertureSize=int(self.canny_edge_params.get("apertureSize", 3)),
+            L2gradient=bool(self.canny_edge_params.get("L2gradient", False)),
+        )
         return edges
 
     def find_horizon_line(self, file_path: str) -> list[int]:
-        # get the index of the highest non zero value in each column
+        """Detect a horizon line from an image file path.
+
+        Returns a list of length equal to image width, where each entry is the
+        detected horizon height measured from the bottom. -1 indicates unknown.
+        """
         edges = self._get_canny_edges(file_path)
         height = len(edges)
         width = len(edges[0])
@@ -123,8 +160,11 @@ class HorizonFinder:
         return horizon_line
     
     def find_horizon_line_from_array(self, img_array: np.ndarray) -> list[int]:
-        """Find horizon line directly from numpy array (optimized for video processing)"""
-        # get the index of the highest non zero value in each column
+        """Detect a horizon line from an in-memory RGB or grayscale array.
+
+        Optimized for video frames. Output format is identical to
+        `find_horizon_line`.
+        """
         edges = self._get_canny_edges_from_array(img_array)
         height = len(edges)
         width = len(edges[0])
@@ -207,7 +247,14 @@ class HorizonFinder:
         return horizon_line
     
     def update_parameters(self, settings: dict) -> None:
-        """Update horizon finder parameters from settings dictionary"""
+        """Update detection parameters from a settings dictionary.
+
+        Expected structure:
+        {
+            "canny_edge_params": {"threshold1", "threshold2", "apertureSize", "L2gradient"},
+            "horizon_line_params": {"line_jump_threshold"}
+        }
+        """
         if "canny_edge_params" in settings:
             self.canny_edge_params.update(settings["canny_edge_params"])
         
@@ -215,7 +262,7 @@ class HorizonFinder:
             self.horizon_line_params.update(settings["horizon_line_params"])
     
     def get_current_parameters(self) -> dict:
-        """Get current parameters as dictionary"""
+        """Return a copy of current parameters for UI display or export."""
         return {
             "canny_edge_params": self.canny_edge_params.copy(),
             "horizon_line_params": self.horizon_line_params.copy()

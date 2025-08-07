@@ -1,5 +1,7 @@
-"""
-File selection widget for the Sonic Skyline application
+"""File selection widget for the Sonic Skyline application.
+
+Provides a small UI with a button to open the OS file dialog and a label that
+shows the selected filename. Emits `file_selected` with the chosen path.
 """
 import os
 from typing import Optional
@@ -10,7 +12,7 @@ from gui.ui_components import create_styled_button, create_file_status_label
 
 
 class FileSelectionManager(QWidget):
-    """Widget for selecting media files"""
+    """Widget for selecting media files."""
     
     # Signal emitted when a file is selected
     file_selected = pyqtSignal(str)
@@ -21,7 +23,7 @@ class FileSelectionManager(QWidget):
         self._setup_ui()
     
     def _setup_ui(self) -> None:
-        """Setup the file selection UI components"""
+        """Setup the file selection UI components."""
         self.setFixedSize(FILE_SELECTION_SIZE)
         
         # Create layout and components
@@ -39,7 +41,7 @@ class FileSelectionManager(QWidget):
         layout.addStretch()
     
     def _select_file(self) -> None:
-        """Open file dialog to select video or image files"""
+        """Open file dialog to select a video or image file."""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Video or Image File",
@@ -51,7 +53,7 @@ class FileSelectionManager(QWidget):
             self._update_selected_file(file_path)
     
     def _update_selected_file(self, file_path: str) -> None:
-        """Update the selected file and UI"""
+        """Update the selected file path, UI label, and emit signal."""
         self.selected_file_path = file_path
         filename = os.path.basename(file_path)
         
@@ -62,5 +64,5 @@ class FileSelectionManager(QWidget):
         self.file_selected.emit(file_path)
     
     def get_selected_file(self) -> Optional[str]:
-        """Return the currently selected file path"""
+        """Return the currently selected file path, or None if not set."""
         return self.selected_file_path 

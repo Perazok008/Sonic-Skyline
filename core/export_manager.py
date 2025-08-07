@@ -1,5 +1,9 @@
-"""
-Export manager for handling horizon detection result exports
+"""Export manager for handling horizon detection result exports.
+
+Supports three export types:
+- CSV: serialize line coordinates
+- Graph: plot a small set of horizon lines using matplotlib
+- Overlay: draw the horizon on top of the original image/video
 """
 import csv
 import os
@@ -7,11 +11,11 @@ from pathlib import Path
 from typing import List, Optional, Dict
 import numpy as np
 import cv2 as cv
-from PyQt6.QtWidgets import QMessageBox
+from core.constants import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 
 
 class ExportManager:
-    """Manages export operations for horizon detection results"""
+    """Manages export operations for horizon detection results."""
     
     @staticmethod
     def export_results(
@@ -22,19 +26,11 @@ class ExportManager:
         horizon_line: Optional[List[int]] = None,
         all_horizon_lines: Optional[List[List[int]]] = None
     ) -> bool:
-        """
-        Export horizon detection results based on configuration
-        
-        Args:
-            export_config: Dictionary with export format flags
-            save_path: Directory to save files
-            base_name: Base name for files (suffixes will be added)
-            file_path: Path to original file
-            horizon_line: Single horizon line data (for images)
-            all_horizon_lines: All horizon lines (for videos)
-        
-        Returns:
-            bool: True if all exports successful, False otherwise
+        """Export results based on `export_config` flags.
+
+        - `csv`: always allowed; will contain what data is available
+        - `graph`: requires at least one horizon line; limits video plot to first 10 for readability
+        - `overlay`: requires original file and at least one line
         """
         success = True
         
@@ -70,7 +66,7 @@ class ExportManager:
         horizon_line: Optional[List[int]],
         all_horizon_lines: Optional[List[List[int]]]
     ) -> bool:
-        """Export horizon line data to CSV"""
+        """Export horizon line data to CSV."""
         try:
             csv_path = os.path.join(save_path, f"{base_name}_csv.csv")
             
@@ -110,7 +106,7 @@ class ExportManager:
         horizon_line: Optional[List[int]],
         all_horizon_lines: Optional[List[List[int]]]
     ) -> bool:
-        """Export horizon line as graph visualization"""
+        """Export horizon line as graph visualization."""
         try:
             import matplotlib.pyplot as plt
             
@@ -170,15 +166,15 @@ class ExportManager:
         horizon_line: Optional[List[int]],
         all_horizon_lines: Optional[List[List[int]]]
     ) -> bool:
-        """Export original file with horizon line overlay"""
+        """Export original file with horizon line overlay."""
         try:
             file_ext = Path(file_path).suffix.lower()
             
-            if file_ext in ['.jpg', '.jpeg', '.png', '.bmp']:
+            if file_ext in IMAGE_EXTENSIONS:
                 return ExportManager._export_image_overlay(
                     save_path, base_name, file_path, horizon_line
                 )
-            elif file_ext in ['.mp4', '.avi', '.mov', '.mkv']:
+            elif file_ext in VIDEO_EXTENSIONS:
                 return ExportManager._export_video_overlay(
                     save_path, base_name, file_path, all_horizon_lines
                 )
@@ -197,7 +193,7 @@ class ExportManager:
         file_path: str,
         horizon_line: Optional[List[int]]
     ) -> bool:
-        """Export image with horizon line overlay"""
+        """Export image with horizon line overlay."""
         try:
             # Load original image
             image = cv.imread(file_path)
@@ -236,7 +232,7 @@ class ExportManager:
         file_path: str,
         all_horizon_lines: Optional[List[List[int]]]
     ) -> bool:
-        """Export video with horizon line overlay"""
+        """Export video with horizon line overlay."""
         try:
             # Open original video
             cap = cv.VideoCapture(file_path)

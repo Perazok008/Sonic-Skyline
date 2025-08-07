@@ -1,5 +1,7 @@
-"""
-Constants used throughout the Sonic Skyline application
+"""Constants used throughout the Sonic Skyline application.
+
+Centralized sizes, colors, fonts, file filters, and supported extensions to
+ensure the UI and logic stay consistent across modules.
 """
 from PyQt6.QtGui import QFont
 from PyQt6.QtCore import QSize
@@ -27,7 +29,7 @@ IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.bmp', '.gif']
 VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv']
 SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS + VIDEO_EXTENSIONS
 
-# File dialog filter
+# File dialog filter for open dialog – grouped for convenience
 FILE_DIALOG_FILTER = (
     "Media Files (*.mp4 *.avi *.mov *.mkv *.jpg *.jpeg *.png *.bmp *.gif);;"
     "Video Files (*.mp4 *.avi *.mov *.mkv);;"
@@ -40,4 +42,4 @@ CONTENT_AREA_STYLE = f"""
         border: 2px solid {BORDER_COLOR};
         border-radius: 10px;
     }}
-""" 
+"""
