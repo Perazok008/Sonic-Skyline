@@ -5,7 +5,22 @@ and export dialog. Manages application state for the currently selected file
 and the computed horizon line, ensuring preview and export remain consistent.
 """
 import os
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QMessageBox
+from PyQt6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QVBoxLayout,
+    QWidget,
+    QHBoxLayout,
+    QMessageBox,
+    QLabel,
+    QPushButton,
+    QSlider,
+    QScrollArea,
+    QSystemTrayIcon,
+    QMenu,
+)
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QIcon, QAction
 from core.constants import APP_NAME, WINDOW_MIN_SIZE, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from gui.file_selection import FileSelectionManager
 from gui.ui_components import create_content_area, create_styled_button, create_button_layout, create_visualization_toggles
@@ -38,6 +53,21 @@ class MainWindow(QMainWindow):
         self._has_processed_image = False
         
         self._connect_signals()
+        self._init_tray()
+
+    def _init_tray(self):
+        self.tray_icon = QSystemTrayIcon(QIcon("assets/icon.ico"), self)
+        menu = QMenu()
+        show_action = QAction("Show", self, triggered=self.showNormal)
+        pause_action = QAction("Pause/Resume", self, triggered=self._toggle_pause)  # reuse existing handler
+        quit_action = QAction("Quit", self, triggered=QApplication.instance().quit)
+        menu.addAction(show_action)
+        menu.addAction(pause_action)
+        menu.addSeparator()
+        menu.addAction(quit_action)
+        self.tray_icon.setContextMenu(menu)
+        self.tray_icon.setToolTip("Sonic Skyline")
+        self.tray_icon.show()
     
     def _setup_window(self) -> None:
         """Configure the main window"""
@@ -78,13 +108,22 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.content_area)
         left_layout.addLayout(button_layout)
         
-        # Create settings panel on the right (fixed width)
+        # Create settings panel on the right (fixed width) inside a scroll area
         self.settings_panel = FinderSettingsPanel()
+        self.settings_scroll = QScrollArea()
+        self.settings_scroll.setWidget(self.settings_panel)
+        self.settings_scroll.setWidgetResizable(True)
+        self.settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.settings_scroll.setMinimumWidth(260)
+        self.settings_scroll.setMaximumWidth(320)
         
         # Add left content and settings panel to main layout
         # Give the left content area a larger stretch so it grows preferentially
         main_layout.addWidget(left_widget, stretch=4)
-        main_layout.addWidget(self.settings_panel, stretch=0)
+        main_layout.addWidget(self.settings_scroll, stretch=0)
+        
+        # Add simple video controls below content area
+        self._add_video_controls(left_layout)
     
     def _connect_signals(self) -> None:
         """Connect signals to their respective slots"""
@@ -103,6 +142,11 @@ class MainWindow(QMainWindow):
         # Initialize settings panel with current horizon finder parameters so UI reflects engine defaults
         current_params = self.horizon_finder.get_current_parameters()
         self.settings_panel.set_settings(current_params)
+        # Wire playback sliders to display manager and set periodic FPS updater
+        self.settings_panel.settings_changed.connect(self._on_playback_settings_changed)
+        self._fps_timer = QTimer(self)
+        self._fps_timer.timeout.connect(self._update_fps_labels)
+        self._fps_timer.start(500)
     
     def _on_file_selected(self, file_path: str) -> None:
         """Handle file selection"""
@@ -119,6 +163,13 @@ class MainWindow(QMainWindow):
             show_image=show_image, show_horizon=False, show_axis=show_axis,
             horizon_finder=self.horizon_finder
         )
+        # Reset playback UI
+        self._update_playback_controls()
+        # Sync display FPS default to native FPS (on video)
+        state = FileDisplayManager.get_video_state()
+        native = int(state.get("native_fps", 0) or 0)
+        if native > 0:
+            self.settings_panel.display_fps_slider.setValue(max(5, min(120, native)))
     
     def _enable_buttons(self, enabled: bool) -> None:
         """Enable or disable process and export buttons."""
@@ -158,6 +209,7 @@ class MainWindow(QMainWindow):
             show_image=show_image, show_horizon=show_horizon, show_axis=show_axis,
             horizon_finder=self.horizon_finder
         )
+        self._update_playback_controls()
 
 
     def _export_file(self) -> None:
@@ -167,10 +219,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Export Error", "No file selected.")
             return
         
-        # Check if we have any horizon data available to export
-        has_horizon_data = (self.current_horizon_line is not None or 
-                           self.current_video_horizon_lines or 
-                           self.is_video_processed)
+        # Check if we have any horizon data available to export (allow video selection without pressing Process)
+        has_horizon_data = True
         
         # Show export dialog
         dialog = ExportDialog(current_file=file_path, has_horizon_data=has_horizon_data)
@@ -189,10 +239,8 @@ class MainWindow(QMainWindow):
             # For videos, we need to collect horizon lines if processing in real-time
             file_extension = os.path.splitext(file_path)[1].lower()
             if file_extension in VIDEO_EXTENSIONS and self.is_video_processed:
-                # For videos, we'll need to process all frames for export
-                # This is a simplified approach - in a real application you might want to
-                # cache the results during playback or show a progress dialog
-                all_horizon_lines = self._collect_video_horizon_lines(file_path)
+                # For videos, process frames respecting desired processing FPS and show progress
+                all_horizon_lines = self._collect_video_horizon_lines_with_progress(file_path)
             
             # Perform export
             success = ExportManager.export_results(
@@ -220,6 +268,57 @@ class MainWindow(QMainWindow):
                 self, "Export Error", 
                 f"Export failed: {str(e)}"
             )
+
+    def _collect_video_horizon_lines_with_progress(self, file_path: str) -> list[list[int]]:
+        """Collect horizon lines for all frames in a video with progress dialog and FPS sampling."""
+        try:
+            import cv2 as cv
+            from PyQt6.QtWidgets import QProgressDialog
+
+            cap = cv.VideoCapture(file_path)
+            if not cap.isOpened():
+                return []
+
+            total_frames = int(cap.get(cv.CAP_PROP_FRAME_COUNT) or 0)
+            native_fps = cap.get(cv.CAP_PROP_FPS) or 20
+            # Determine desired processing fps
+            desired_proc_fps = FileDisplayManager._desired_processing_fps or native_fps
+            desired_proc_fps = max(1.0, float(desired_proc_fps))
+            sample_stride = max(1, int(round(native_fps / desired_proc_fps)))
+
+            progress = QProgressDialog("Exporting...", "Cancel", 0, total_frames, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setMinimumDuration(0)
+
+            horizon_lines: list[list[int]] = []
+            frame_idx = 0
+            canceled = False
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                if frame_idx % sample_stride == 0:
+                    try:
+                        frame_rgb = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
+                        line = self.horizon_finder.find_horizon_line_from_array(frame_rgb)
+                        horizon_lines.append(line)
+                    except Exception:
+                        horizon_lines.append([])
+                frame_idx += 1
+                if frame_idx % 5 == 0:
+                    progress.setValue(min(frame_idx, total_frames))
+                    if progress.wasCanceled():
+                        canceled = True
+                        break
+
+            cap.release()
+            progress.setValue(total_frames)
+            if canceled:
+                return []
+            return horizon_lines
+        except Exception as e:
+            print(f"Error collecting video horizon lines: {e}")
+            return []
 
     def _collect_video_horizon_lines(self, file_path: str) -> list[list[int]]:
         """Collect horizon lines for all frames in a video"""
@@ -285,6 +384,7 @@ class MainWindow(QMainWindow):
         if file_extension in VIDEO_EXTENSIONS:
             # For videos, just update the display settings for ongoing playback
             FileDisplayManager.update_video_display_settings(show_image, show_horizon, show_axis)
+            self._update_playback_controls()
         else:
             # For images, reuse cached horizon line if available; don't recompute here
             horizon_line = self.current_horizon_line if self._has_processed_image else None
@@ -310,8 +410,96 @@ class MainWindow(QMainWindow):
                 except Exception:
                     self.current_horizon_line = None
                     self._has_processed_image = False
+            # For video: if paused, force recompute on current frame for tuning
+            elif file_extension in VIDEO_EXTENSIONS and FileDisplayManager.is_paused():
+                state = FileDisplayManager.get_video_state()
+                # Seek to same frame index to trigger immediate render with new settings
+                FileDisplayManager.seek_to_frame(state.get("current_frame", 0))
+                # Also refresh paused frame explicitly
+                FileDisplayManager.refresh_paused_frame(force_recompute=True)
             # Refresh display to reflect new settings and cached line
             self._refresh_display()
+
+    def _add_video_controls(self, parent_layout: QVBoxLayout) -> None:
+        """Add basic playback controls: pause/resume, timeline, and FPS readouts."""
+        controls_row = QHBoxLayout()
+        controls_row.setContentsMargins(0, 6, 0, 0)
+        controls_row.setSpacing(10)
+
+        self.pause_button = QPushButton("Pause")
+        self.pause_button.setEnabled(False)
+        self.pause_button.clicked.connect(self._toggle_pause)
+
+        self.timeline_slider = QSlider(Qt.Orientation.Horizontal)
+        self.timeline_slider.setEnabled(False)
+        self.timeline_slider.setRange(0, 0)
+        self.timeline_slider.sliderReleased.connect(self._on_seek)
+
+        self.time_label = QLabel("00:00 / 00:00 | Proc: 0 fps | Native: 0 fps")
+
+        controls_row.addWidget(self.pause_button)
+        controls_row.addWidget(self.timeline_slider, stretch=1)
+        controls_row.addWidget(self.time_label)
+
+        parent_layout.addLayout(controls_row)
+
+    def _toggle_pause(self) -> None:
+        if FileDisplayManager.is_paused():
+            FileDisplayManager.resume()
+            self.pause_button.setText("Pause")
+        else:
+            FileDisplayManager.pause()
+            self.pause_button.setText("Resume")
+
+    def _on_seek(self) -> None:
+        if not self.timeline_slider.isEnabled():
+            return
+        frame_index = self.timeline_slider.value()
+        FileDisplayManager.seek_to_frame(frame_index)
+        self._update_playback_controls()
+
+    def _on_playback_settings_changed(self, settings: dict) -> None:
+        pb = settings.get("playback", {})
+        proc = pb.get("processing_fps", 0)
+        disp = pb.get("display_max_fps", 30)
+        if proc and proc > 0:
+            FileDisplayManager.set_processing_fps(proc)
+        else:
+            FileDisplayManager._auto_processing_fps = True
+            FileDisplayManager._recompute_timing()
+        FileDisplayManager.set_display_max_fps(disp)
+        self._update_playback_controls()
+
+    def _format_time(self, total_seconds: float) -> str:
+        total_seconds = max(0, int(total_seconds))
+        m, s = divmod(total_seconds, 60)
+        return f"{m:02d}:{s:02d}"
+
+    def _update_playback_controls(self) -> None:
+        state = FileDisplayManager.get_video_state()
+        total_frames = state.get("total_frames", 0)
+        native_fps = state.get("native_fps", 0.0) or 0.0
+        self.timeline_slider.setEnabled(total_frames > 0)
+        self.pause_button.setEnabled(total_frames > 0)
+        # Update pause button label to reflect current state
+        self.pause_button.setText("Resume" if state.get("is_paused", False) else "Pause")
+        if total_frames > 0:
+            self.timeline_slider.setRange(0, total_frames - 1)
+            self.timeline_slider.setValue(state.get("current_frame", 0))
+            cur_sec = (state.get("current_frame", 0) / native_fps) if native_fps > 0 else 0
+            tot_sec = (total_frames / native_fps) if native_fps > 0 else 0
+            proc_fps = state.get("processing_fps", 0.0) or 0.0
+            playback_fps = state.get("playback_fps", 0.0) or 0.0
+            self.time_label.setText(
+                f"{self._format_time(cur_sec)} / {self._format_time(tot_sec)} | Proc: {proc_fps:.1f} fps | Play: {playback_fps:.1f} fps | Native: {native_fps:.1f} fps"
+            )
+        else:
+            self.time_label.setText("00:00 / 00:00 | Proc: 0 fps | Native: 0 fps")
+            self.timeline_slider.setRange(0, 0)
+            self.timeline_slider.setValue(0)
+
+    def _update_fps_labels(self) -> None:
+        self._update_playback_controls()
 
     def closeEvent(self, event) -> None:
         """Ensure video resources are released when window closes"""
@@ -324,6 +512,7 @@ class MainWindow(QMainWindow):
 def main() -> None:
     """Main application entry point"""
     app = QApplication([])
+    app.setWindowIcon(QIcon("assets/icon.ico"))
     window = MainWindow()
     window.show()
     app.exec()

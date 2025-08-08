@@ -32,6 +32,8 @@ class HorizonFinder:
         self.horizon_line_params = {
             "line_jump_threshold": 15,
         }
+        # Algorithm selection: 'v1' (classic) or 'v2' (vectorized)
+        self.algorithm_version = "v2"
 
     def _get_canny_edges(self, file_path: str) -> np.ndarray:
         """Run Canny edge detection on an image file path.
@@ -41,11 +43,15 @@ class HorizonFinder:
         """
         img = cv.imread(file_path, cv.IMREAD_GRAYSCALE)
         assert img is not None, "file could not be read, check with os.path.exists()"
+        # OpenCV requires odd aperture sizes in {3,5,7}; fall back to 3 on invalid
+        aperture = int(self.canny_edge_params.get("apertureSize", 3))
+        if aperture not in (3, 5, 7):
+            aperture = 3
         edges = cv.Canny(
             img,
             self.canny_edge_params["threshold1"],
             self.canny_edge_params["threshold2"],
-            apertureSize=int(self.canny_edge_params.get("apertureSize", 3)),
+            apertureSize=aperture,
             L2gradient=bool(self.canny_edge_params.get("L2gradient", False)),
         )
         return edges
@@ -62,114 +68,38 @@ class HorizonFinder:
         else:
             img_gray = img_array
         
+        aperture = int(self.canny_edge_params.get("apertureSize", 3))
+        if aperture not in (3, 5, 7):
+            aperture = 3
         edges = cv.Canny(
             img_gray,
             self.canny_edge_params["threshold1"],
             self.canny_edge_params["threshold2"],
-            apertureSize=int(self.canny_edge_params.get("apertureSize", 3)),
+            apertureSize=aperture,
             L2gradient=bool(self.canny_edge_params.get("L2gradient", False)),
         )
         return edges
 
     def find_horizon_line(self, file_path: str) -> list[int]:
-        """Detect a horizon line from an image file path.
-
-        Returns a list of length equal to image width, where each entry is the
-        detected horizon height measured from the bottom. -1 indicates unknown.
-        """
+        """Detect a horizon line from an image file path (delegates by version)."""
         edges = self._get_canny_edges(file_path)
-        height = len(edges)
-        width = len(edges[0])
-        horizon_line = [-1 for _ in range (0, width)]
-        #horizon_line_deltas = [-1 for _ in range (0, width)]
-
-        line_jump_thres = self.horizon_line_params["line_jump_threshold"]
-
-        prev_hori_pixel = -1
-        for col in range(0, width):
-            # pick highest line if first col
-            if prev_hori_pixel == -1:
-                for i in range(0, height):
-                    curr_height = height - i
-                    pixel = edges[i][col]
-                    if pixel != 0: # there is an edge
-                        horizon_line[col] = curr_height
-                        prev_hori_pixel = curr_height
-                        break
-
-            up_height = -1
-            # search up from previous line
-            for i in range(0, height-prev_hori_pixel):
-                curr_height = prev_hori_pixel + i
-                pixel = edges[height-prev_hori_pixel-i][col]
-                if pixel != 0: # there is an edge
-                    up_height = curr_height
-                    break
-            down_height = -1
-            # search down from previous line
-            for i in range(0, prev_hori_pixel):
-                curr_height = prev_hori_pixel - i
-                pixel = edges[height-prev_hori_pixel+i][col]
-                if pixel != 0: # there is an edge
-                    down_height = curr_height
-                    break
-
-            # compare deltas, pick closer line
-            if (up_height == -1 and down_height == -1):
-                # didn't find any edge
-                # add the previous value
-                horizon_line[col] = prev_hori_pixel
-            # only found an edge below
-            elif (up_height != -1 and down_height == -1):
-                if (abs(prev_hori_pixel-up_height) <= line_jump_thres):
-                    horizon_line[col] = up_height
-                    prev_hori_pixel = up_height
-                else:
-                    # didn't find a close enough edge
-                    # add the previous value
-                    horizon_line[col] = prev_hori_pixel
-            # only found an edge above
-            elif (up_height == -1 and down_height != -1):
-                if (abs(prev_hori_pixel-down_height) <= line_jump_thres):
-                    horizon_line[col] = down_height
-                    prev_hori_pixel = down_height
-                else:
-                    # didn't find a close enough edge
-                    # add the previous value
-                    horizon_line[col] = prev_hori_pixel
-            # found an edges above and below
-            else: #(up_height != -1 and down_height != -1):
-                # up_height is closer
-                if (abs(prev_hori_pixel-up_height) <= abs(prev_hori_pixel-down_height)):
-                    if (abs(prev_hori_pixel-up_height) <= line_jump_thres):
-                        horizon_line[col] = up_height
-                        prev_hori_pixel = up_height
-                    else:
-                        # didn't find a close enough edge
-                        # add the previous value
-                        horizon_line[col] = prev_hori_pixel
-                else: # down_height is closer
-                    if (abs(prev_hori_pixel-down_height) <= line_jump_thres):
-                        horizon_line[col] = down_height
-                        prev_hori_pixel = down_height
-                    else:
-                        # didn't find a close enough edge
-                        # add the previous value
-                        horizon_line[col] = prev_hori_pixel
-
-        return horizon_line
+        return self._compute_horizon_line_from_edges(edges)
     
     def find_horizon_line_from_array(self, img_array: np.ndarray) -> list[int]:
-        """Detect a horizon line from an in-memory RGB or grayscale array.
-
-        Optimized for video frames. Output format is identical to
-        `find_horizon_line`.
-        """
+        """Detect a horizon line from an in-memory RGB or grayscale array (delegates by version)."""
         edges = self._get_canny_edges_from_array(img_array)
+        return self._compute_horizon_line_from_edges(edges)
+
+    # ---------------- Internal implementations ----------------
+    def _compute_horizon_line_from_edges(self, edges: np.ndarray) -> list[int]:
+        if self.algorithm_version == "v2":
+            return self._compute_horizon_line_v2_from_edges(edges)
+        return self._compute_horizon_line_v1_from_edges(edges)
+
+    def _compute_horizon_line_v1_from_edges(self, edges: np.ndarray) -> list[int]:
         height = len(edges)
         width = len(edges[0])
         horizon_line = [-1 for _ in range(0, width)]
-
         line_jump_thres = self.horizon_line_params["line_jump_threshold"]
 
         prev_hori_pixel = -1
@@ -186,63 +116,91 @@ class HorizonFinder:
 
             up_height = -1
             # search up from previous line
-            for i in range(0, height-prev_hori_pixel):
+            max_up = max(0, min(height - prev_hori_pixel, height))
+            for i in range(0, max_up):
                 curr_height = prev_hori_pixel + i
-                pixel = edges[height-prev_hori_pixel-i][col]
+                row = height - prev_hori_pixel - i
+                if not (0 <= row < height):
+                    continue
+                pixel = edges[row][col]
                 if pixel != 0:  # there is an edge
                     up_height = curr_height
                     break
             down_height = -1
             # search down from previous line
-            for i in range(0, prev_hori_pixel):
+            max_down = max(0, min(prev_hori_pixel, height))
+            for i in range(0, max_down):
                 curr_height = prev_hori_pixel - i
-                pixel = edges[height-prev_hori_pixel+i][col]
+                row = height - prev_hori_pixel + i
+                if not (0 <= row < height):
+                    continue
+                pixel = edges[row][col]
                 if pixel != 0:  # there is an edge
                     down_height = curr_height
                     break
 
             # compare deltas, pick closer line
             if (up_height == -1 and down_height == -1):
-                # didn't find any edge
-                # add the previous value
                 horizon_line[col] = prev_hori_pixel
-            # only found an edge below
             elif (up_height != -1 and down_height == -1):
-                if (abs(prev_hori_pixel-up_height) <= line_jump_thres):
+                if (abs(prev_hori_pixel - up_height) <= line_jump_thres):
                     horizon_line[col] = up_height
                     prev_hori_pixel = up_height
                 else:
-                    # didn't find a close enough edge
-                    # add the previous value
                     horizon_line[col] = prev_hori_pixel
-            # only found an edge above
             elif (up_height == -1 and down_height != -1):
-                if (abs(prev_hori_pixel-down_height) <= line_jump_thres):
+                if (abs(prev_hori_pixel - down_height) <= line_jump_thres):
                     horizon_line[col] = down_height
                     prev_hori_pixel = down_height
                 else:
-                    # didn't find a close enough edge
-                    # add the previous value
                     horizon_line[col] = prev_hori_pixel
-            # found an edges above and below
-            else:  #(up_height != -1 and down_height != -1):
-                # up_height is closer
-                if (abs(prev_hori_pixel-up_height) <= abs(prev_hori_pixel-down_height)):
-                    if (abs(prev_hori_pixel-up_height) <= line_jump_thres):
+            else:
+                if (abs(prev_hori_pixel - up_height) <= abs(prev_hori_pixel - down_height)):
+                    if (abs(prev_hori_pixel - up_height) <= line_jump_thres):
                         horizon_line[col] = up_height
                         prev_hori_pixel = up_height
                     else:
-                        # didn't find a close enough edge
-                        # add the previous value
                         horizon_line[col] = prev_hori_pixel
-                else:  # down_height is closer
-                    if (abs(prev_hori_pixel-down_height) <= line_jump_thres):
+                else:
+                    if (abs(prev_hori_pixel - down_height) <= line_jump_thres):
                         horizon_line[col] = down_height
                         prev_hori_pixel = down_height
                     else:
-                        # didn't find a close enough edge
-                        # add the previous value
                         horizon_line[col] = prev_hori_pixel
+
+        return horizon_line
+
+    def _compute_horizon_line_v2_from_edges(self, edges: np.ndarray) -> list[int]:
+        # Vectorized first-edge-from-TOP (more likely to catch sky/ground boundary)
+        height, width = edges.shape[:2]
+        binary = (edges != 0)
+        any_edge = binary.any(axis=0)
+        first_idx_from_top = binary.argmax(axis=0)
+        # Convert to heights from bottom
+        heights = np.where(any_edge, height - first_idx_from_top, -1)
+
+        horizon_line = [-1 for _ in range(width)]
+        line_jump_thres = self.horizon_line_params["line_jump_threshold"]
+        prev_hori_pixel = -1
+        for col in range(width):
+            candidate = int(heights[col])
+            if prev_hori_pixel == -1:
+                if candidate != -1:
+                    horizon_line[col] = candidate
+                    prev_hori_pixel = candidate
+                else:
+                    horizon_line[col] = -1
+                continue
+
+            if candidate == -1:
+                horizon_line[col] = prev_hori_pixel
+                continue
+
+            if abs(prev_hori_pixel - candidate) <= line_jump_thres:
+                horizon_line[col] = candidate
+                prev_hori_pixel = candidate
+            else:
+                horizon_line[col] = prev_hori_pixel
 
         return horizon_line
     
@@ -260,10 +218,14 @@ class HorizonFinder:
         
         if "horizon_line_params" in settings:
             self.horizon_line_params.update(settings["horizon_line_params"])
+        if "algorithm_version" in settings:
+            if settings["algorithm_version"] in ("v1", "v2"):
+                self.algorithm_version = settings["algorithm_version"]
     
     def get_current_parameters(self) -> dict:
         """Return a copy of current parameters for UI display or export."""
         return {
             "canny_edge_params": self.canny_edge_params.copy(),
-            "horizon_line_params": self.horizon_line_params.copy()
+            "horizon_line_params": self.horizon_line_params.copy(),
+            "algorithm_version": self.algorithm_version,
         }

@@ -5,7 +5,7 @@ Exposes Canny edge detection parameters and the horizon continuity constraint
 change so the main window can apply updates immediately.
 """
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QSpinBox, 
-                            QCheckBox, QGroupBox, QPushButton, QHBoxLayout)
+                            QCheckBox, QGroupBox, QPushButton, QHBoxLayout, QSlider, QComboBox)
 from PyQt6.QtCore import pyqtSignal, Qt
 from core.constants import BUTTON_FONT, CONTENT_FONT
 
@@ -68,7 +68,7 @@ class FinderSettingsPanel(QWidget):
                 border-radius: 0px;
                 margin-top: 15px;
                 padding-top: 15px;
-                background-color: palette(base);
+                background-color: transparent;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -77,7 +77,7 @@ class FinderSettingsPanel(QWidget):
                 top: 5px;
                 padding: 0 8px 0 8px;
                 color: palette(text);
-                background-color: palette(base);
+                background-color: transparent;
             }
             QLabel {
                 color: palette(text);
@@ -91,7 +91,7 @@ class FinderSettingsPanel(QWidget):
                 color: palette(text);
                 border: none;
                 border-bottom: 1px solid palette(mid);
-                padding: 6px 4px;
+                padding: 6px 24px 6px 6px; /* right padding for spin buttons */
                 margin: 2px 0px;
                 font-size: 11px;
                 selection-background-color: palette(highlight);
@@ -99,6 +99,27 @@ class FinderSettingsPanel(QWidget):
             }
             QSpinBox:focus {
                 border-bottom: 2px solid palette(highlight);
+            }
+            /* Improve up/down button hit areas and visuals */
+            QSpinBox::up-button, QSpinBox::down-button {
+                subcontrol-origin: border;
+                width: 18px;
+                background: palette(button);
+                border: 1px solid palette(mid);
+                border-radius: 3px;
+                margin: 2px 2px;
+            }
+            QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+                background: palette(light);
+            }
+            QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {
+                background: palette(dark);
+            }
+            QSpinBox::up-button {
+                subcontrol-position: top right;
+            }
+            QSpinBox::down-button {
+                subcontrol-position: bottom right;
             }
             QCheckBox {
                 color: palette(text);
@@ -147,13 +168,12 @@ class FinderSettingsPanel(QWidget):
         self.threshold2_spin.setValue(200)
         layout.addWidget(self.threshold2_spin)
         
-        # Aperture Size – Sobel kernel size (odd 3..7); larger captures broader gradients
+        # Aperture Size – Sobel kernel size (OpenCV supports 3,5,7)
         layout.addWidget(QLabel("Aperture Size:"))
-        self.aperture_spin = QSpinBox()
-        self.aperture_spin.setRange(3, 7)
-        self.aperture_spin.setSingleStep(2)  # Only odd numbers
-        self.aperture_spin.setValue(3)
-        layout.addWidget(self.aperture_spin)
+        self.aperture_combo = QComboBox()
+        self.aperture_combo.addItems(["3", "5", "7"])  # OpenCV supports 3,5,7
+        self.aperture_combo.setCurrentText("3")
+        layout.addWidget(self.aperture_combo)
         
         # L2 Gradient – use more accurate gradient magnitude at the cost of speed
         self.l2_gradient_check = QCheckBox("Use L2 Gradient")
@@ -177,11 +197,41 @@ class FinderSettingsPanel(QWidget):
         self.line_jump_spin.setValue(15)
         layout.addWidget(self.line_jump_spin)
         
-        # Help text to clarify behavior for users
+        # Playback/processing controls with visible values
+        layout.addWidget(QLabel("Processing FPS (frames per second):"))
+        pfps_row = QHBoxLayout()
+        self.processing_fps_slider = QSlider(Qt.Orientation.Horizontal)
+        self.processing_fps_slider.setRange(1, 120)
+        self.processing_fps_slider.setValue(30)
+        self.processing_fps_value = QLabel("30 fps")
+        pfps_row.addWidget(self.processing_fps_slider)
+        pfps_row.addWidget(self.processing_fps_value)
+        layout.addLayout(pfps_row)
+
+        layout.addWidget(QLabel("Display Max FPS:"))
+        dfps_row = QHBoxLayout()
+        self.display_fps_slider = QSlider(Qt.Orientation.Horizontal)
+        self.display_fps_slider.setRange(5, 120)
+        self.display_fps_slider.setValue(30)
+        self.display_fps_value = QLabel("30 fps")
+        dfps_row.addWidget(self.display_fps_slider)
+        dfps_row.addWidget(self.display_fps_value)
+        layout.addLayout(dfps_row)
+
+        # Algorithm selection (v1 classic, v2 vectorized)
+        algo_row = QHBoxLayout()
+        algo_row.addWidget(QLabel("Algorithm:"))
+        self.algorithm_combo = QComboBox()
+        self.algorithm_combo.addItems(["v1", "v2"]) 
+        self.algorithm_combo.setCurrentText("v1")
+        algo_row.addWidget(self.algorithm_combo)
+        layout.addLayout(algo_row)
+
+        # Help text to clarify behavior for users (midlight for dark-mode readability)
         help_label = QLabel("Maximum pixel jump between adjacent horizon points")
         help_label.setStyleSheet("""
-            color: palette(dark); 
-            font-size: 9px; 
+            color: palette(midlight);
+            font-size: 9px;
             margin-top: 5px;
             padding: 4px;
             background-color: transparent;
@@ -216,31 +266,45 @@ class FinderSettingsPanel(QWidget):
         """Connect all input signals to auto-apply changes."""
         self.threshold1_spin.valueChanged.connect(self._apply_settings)
         self.threshold2_spin.valueChanged.connect(self._apply_settings)
-        self.aperture_spin.valueChanged.connect(self._apply_settings)
+        self.aperture_combo.currentTextChanged.connect(self._apply_settings)
         self.l2_gradient_check.stateChanged.connect(self._apply_settings)
         self.line_jump_spin.valueChanged.connect(self._apply_settings)
+        self.processing_fps_slider.valueChanged.connect(self._apply_settings)
+        self.display_fps_slider.valueChanged.connect(self._apply_settings)
+        self.algorithm_combo.currentTextChanged.connect(self._apply_settings)
     
     def _reset_defaults(self):
         """Reset all settings to default values and emit change."""
         self.threshold1_spin.setValue(100)
         self.threshold2_spin.setValue(200)
-        self.aperture_spin.setValue(3)
+        self.aperture_combo.setCurrentText("3")
         self.l2_gradient_check.setChecked(False)
         self.line_jump_spin.setValue(15)
+        self.processing_fps_slider.setValue(30)
+        self.display_fps_slider.setValue(30)
         self._apply_settings()
     
     def _apply_settings(self):
         """Apply current settings by emitting a structured dict."""
+        # Update inline labels for sliders
+        self.processing_fps_value.setText(f"{self.processing_fps_slider.value()} fps")
+        self.display_fps_value.setText(f"{self.display_fps_slider.value()} fps")
+
         settings = {
             "canny_edge_params": {
                 "threshold1": self.threshold1_spin.value(),
                 "threshold2": self.threshold2_spin.value(),
-                "apertureSize": self.aperture_spin.value(),
+                "apertureSize": int(self.aperture_combo.currentText()),
                 "L2gradient": self.l2_gradient_check.isChecked(),
             },
             "horizon_line_params": {
                 "line_jump_threshold": self.line_jump_spin.value(),
-            }
+            },
+            "playback": {
+                "processing_fps": self.processing_fps_slider.value(),
+                "display_max_fps": self.display_fps_slider.value(),
+            },
+            "algorithm_version": self.algorithm_combo.currentText(),
         }
         self.settings_changed.emit(settings)
     
@@ -250,12 +314,17 @@ class FinderSettingsPanel(QWidget):
             "canny_edge_params": {
                 "threshold1": self.threshold1_spin.value(),
                 "threshold2": self.threshold2_spin.value(),
-                "apertureSize": self.aperture_spin.value(),
+                "apertureSize": int(self.aperture_combo.currentText()),
                 "L2gradient": self.l2_gradient_check.isChecked(),
             },
             "horizon_line_params": {
                 "line_jump_threshold": self.line_jump_spin.value(),
-            }
+            },
+            "playback": {
+                "processing_fps": self.processing_fps_slider.value(),
+                "display_max_fps": self.display_fps_slider.value(),
+            },
+            "algorithm_version": self.algorithm_combo.currentText(),
         }
     
     def set_settings(self, settings: dict):
@@ -264,9 +333,15 @@ class FinderSettingsPanel(QWidget):
             canny = settings["canny_edge_params"]
             self.threshold1_spin.setValue(canny.get("threshold1", 100))
             self.threshold2_spin.setValue(canny.get("threshold2", 200))
-            self.aperture_spin.setValue(canny.get("apertureSize", 3))
+            self.aperture_combo.setCurrentText(str(canny.get("apertureSize", 3)))
             self.l2_gradient_check.setChecked(canny.get("L2gradient", False))
         
         if "horizon_line_params" in settings:
             horizon = settings["horizon_line_params"]
             self.line_jump_spin.setValue(horizon.get("line_jump_threshold", 15))
+        if "playback" in settings:
+            pb = settings["playback"]
+            self.processing_fps_slider.setValue(pb.get("processing_fps", 30))
+            self.display_fps_slider.setValue(pb.get("display_max_fps", 30))
+        if "algorithm_version" in settings:
+            self.algorithm_combo.setCurrentText(settings["algorithm_version"]) 

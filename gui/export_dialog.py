@@ -74,11 +74,11 @@ class ExportDialog(QDialog):
             }
             QGroupBox {
                 font-weight: bold;
-                border: 2px solid palette(mid);
-                border-radius: 8px;
+                border: none;
+                border-radius: 0px;
                 margin-top: 10px;
                 padding-top: 15px;
-                background-color: palette(base);
+                background-color: transparent;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -87,7 +87,7 @@ class ExportDialog(QDialog):
                 top: 5px;
                 padding: 0 8px 0 8px;
                 color: palette(text);
-                background-color: palette(base);
+                background-color: transparent;
             }
             QLabel {
                 color: palette(text);
@@ -101,20 +101,20 @@ class ExportDialog(QDialog):
             QLineEdit {
                 background-color: palette(base);
                 color: palette(text);
-                border: 1px solid palette(mid);
-                border-radius: 4px;
-                padding: 6px;
+                border: none;
+                border-bottom: 1px solid palette(mid);
+                padding: 8px 6px;
                 font-size: 11px;
             }
             QLineEdit:focus {
-                border: 2px solid palette(highlight);
+                border-bottom: 2px solid palette(highlight);
             }
             QPushButton {
                 background-color: palette(button);
                 color: palette(button-text);
-                border: 1px solid palette(mid);
-                border-radius: 4px;
-                padding: 8px 16px;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 16px;
                 font-size: 11px;
                 min-width: 80px;
             }
@@ -151,6 +151,29 @@ class ExportDialog(QDialog):
         self.overlay_checkbox = QCheckBox("Overlay - Original with horizon line")
         self.overlay_checkbox.setChecked(False)
         layout.addWidget(self.overlay_checkbox)
+
+        # MIDI export – sonify horizon over time
+        self.midi_checkbox = QCheckBox("MIDI - Sonify horizon over time")
+        self.midi_checkbox.setChecked(False)
+        layout.addWidget(self.midi_checkbox)
+
+        # Audio export – render MIDI to WAV (requires SoundFont)
+        self.audio_checkbox = QCheckBox("Audio - Render MIDI to WAV (requires .sf2)")
+        self.audio_checkbox.setChecked(False)
+        layout.addWidget(self.audio_checkbox)
+
+        # SoundFont path controls (visible only if Audio is selected)
+        self.sf2_label = QLabel("SoundFont (.sf2) path:")
+        self.sf2_input = QLineEdit()
+        self.sf2_browse = QPushButton("Browse...")
+        self.sf2_label.setVisible(False)
+        self.sf2_input.setVisible(False)
+        self.sf2_browse.setVisible(False)
+        sf2_row = QHBoxLayout()
+        sf2_row.addWidget(self.sf2_label)
+        sf2_row.addWidget(self.sf2_input)
+        sf2_row.addWidget(self.sf2_browse)
+        layout.addLayout(sf2_row)
         
         # Help text
         help_text = QLabel("For videos, all processed frames will be included.")
@@ -250,6 +273,10 @@ class ExportDialog(QDialog):
         self.csv_checkbox.stateChanged.connect(self._update_export_button)
         self.graph_checkbox.stateChanged.connect(self._update_export_button)
         self.overlay_checkbox.stateChanged.connect(self._update_export_button)
+        self.midi_checkbox.stateChanged.connect(self._update_export_button)
+        self.audio_checkbox.stateChanged.connect(self._update_export_button)
+        self.audio_checkbox.stateChanged.connect(self._toggle_sf2_visibility)
+        self.sf2_browse.clicked.connect(self._browse_sf2)
         self.name_input.textChanged.connect(self._update_export_button)
     
     def _update_export_options(self):
@@ -260,13 +287,21 @@ class ExportDialog(QDialog):
             self.overlay_checkbox.setEnabled(False)
             self.graph_checkbox.setChecked(False)
             self.overlay_checkbox.setChecked(False)
+            self.midi_checkbox.setEnabled(False)
+            self.audio_checkbox.setEnabled(False)
+            self.midi_checkbox.setChecked(False)
+            self.audio_checkbox.setChecked(False)
     
     def _update_export_button(self):
         """Enable Export only if at least one option and a name are provided."""
         has_selection = (self.csv_checkbox.isChecked() or 
                         self.graph_checkbox.isChecked() or 
-                        self.overlay_checkbox.isChecked())
+                        self.overlay_checkbox.isChecked() or
+                        self.midi_checkbox.isChecked() or
+                        self.audio_checkbox.isChecked())
         has_name = bool(self.name_input.text().strip())
+        if self.audio_checkbox.isChecked() and not self.sf2_input.text().strip():
+            has_selection = False
         
         self.export_button.setEnabled(has_selection and has_name)
     
@@ -287,7 +322,9 @@ class ExportDialog(QDialog):
         # Validate selections
         if not (self.csv_checkbox.isChecked() or 
                self.graph_checkbox.isChecked() or 
-               self.overlay_checkbox.isChecked()):
+               self.overlay_checkbox.isChecked() or
+               self.midi_checkbox.isChecked() or
+               self.audio_checkbox.isChecked()):
             QMessageBox.warning(self, "Export Error", 
                               "Please select at least one export format.")
             return
@@ -310,6 +347,9 @@ class ExportDialog(QDialog):
             'csv': self.csv_checkbox.isChecked(),
             'graph': self.graph_checkbox.isChecked(),
             'overlay': self.overlay_checkbox.isChecked(),
+            'midi': self.midi_checkbox.isChecked(),
+            'audio': self.audio_checkbox.isChecked(),
+            'sf2_path': self.sf2_input.text().strip(),
         }
         
         # Emit signal and close dialog
@@ -322,6 +362,26 @@ class ExportDialog(QDialog):
             'csv': self.csv_checkbox.isChecked(),
             'graph': self.graph_checkbox.isChecked(),
             'overlay': self.overlay_checkbox.isChecked(),
+            'midi': self.midi_checkbox.isChecked(),
+            'audio': self.audio_checkbox.isChecked(),
+            'sf2_path': self.sf2_input.text().strip(),
         }
         
         return export_config, self.selected_path, self.name_input.text().strip()
+
+    def _toggle_sf2_visibility(self):
+        visible = self.audio_checkbox.isChecked()
+        self.sf2_label.setVisible(visible)
+        self.sf2_input.setVisible(visible)
+        self.sf2_browse.setVisible(visible)
+        self._update_export_button()
+
+    def _browse_sf2(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select SoundFont (.sf2)",
+            "",
+            "SoundFont Files (*.sf2)"
+        )
+        if path:
+            self.sf2_input.setText(path)
